@@ -15,6 +15,10 @@ from numba.typed import Dict
 float_array = types.float64[:]
 int_array = types.int64[:]
 
+force_qsos_satellites = True
+
+
+
 @njit(fastmath=True)
 def n_sat_LRG_modified(M_h, logM_cut, M_cut, M_1, sigma, alpha, kappa):
     """
@@ -32,14 +36,23 @@ def n_cen_LRG(M_h, logM_cut, sigma):
     """
     return 0.5*math.erfc((logM_cut - np.log10(M_h))/(1.41421356*sigma))
 
-@njit(fastmath=True)
-def N_sat_generic(M_h, M_cut, kappa, M_1, alpha, A_s=1.):
-    """
-    Standard Zheng et al. (2005) satellite HOD parametrization for all tracers with an optional amplitude parameter, A_s.
-    """
-    if M_h - kappa*M_cut < 0:
-        return 0
-    return A_s*((M_h-kappa*M_cut)/M_1)**alpha
+# if forcing QSOs to be satellites, treat satellite HOD like a central HOD, a step function with minimum mass
+if force_qsos_satellites:
+    @njit(fastmath=True)
+    def N_sat_generic(M_h, M_cut, kappa, M_1, alpha, A_s=1.):
+        logM_cut = np.log10(M_cut)
+        return 0.5 * (1 + math.erf((np.log10(M_h) - logM_cut) / 1.41421356 / 0.0001))
+else:
+    @njit(fastmath=True)
+    def N_sat_generic(M_h, M_cut, kappa, M_1, alpha, A_s=1.):
+        """
+        Standard Zheng et al. (2005) satellite HOD parametrization for all tracers with an optional amplitude parameter, A_s.
+        """
+        if M_h - kappa*M_cut < 0:
+            return 0
+        return A_s*((M_h-kappa*M_cut)/M_1)**alpha
+
+
 
 @njit(fastmath=True)
 def N_sat_elg(M_h, M_cut, kappa, M_1, alpha, A_s=1., alpha1 = 0., beta = 0.):
@@ -70,12 +83,18 @@ def N_cen_ELG_v2(M_h, p_max, logM_cut, sigma, gamma):
     else:
         return p_max*(M_h/10**logM_cut)**gamma/(2.5066283*sigma)
 
+# if forcing QSOs to always be satellites, N_cen_QSO always returns 0
+if force_qsos_satellites:
+    mod = 0.
+else:
+    mod = 1.
+
 @njit(fastmath=True)
 def N_cen_QSO(M_h, logM_cut, sigma):
     """
     HOD function (Zheng et al. (2005) with p_max) for QSO centrals taken from arXiv:2007.09012.
     """
-    return 0.5*(1 + math.erf((np.log10(M_h)-logM_cut)/1.41421356/sigma))
+    return mod*0.5*(1 + math.erf((np.log10(M_h)-logM_cut)/1.41421356/sigma))
 
 
 @njit(fastmath=True)

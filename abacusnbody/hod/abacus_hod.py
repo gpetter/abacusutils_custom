@@ -35,7 +35,6 @@ from .GRAND_HOD import (
     N_cen_QSO,
     N_sat_generic,
 )
-
 # TODO B.H.: staging can be shorter and prettier; perhaps asdf for h5 and ecsv?
 
 class AbacusHOD:
