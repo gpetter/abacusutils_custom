@@ -405,7 +405,7 @@ class AbacusHOD:
         return halo_data, particle_data, params, mock_dir
 
     def run_hod(self, tracers = None, want_rsd = True, reseed = None, write_to_disk = False,
-        Nthread = 16, verbose = False, fn_ext = None):
+        Nthread = 16, verbose = False, fn_ext = None, quiet=True):
         """
         Runs a custom HOD.
 
@@ -471,7 +471,8 @@ class AbacusHOD:
             savedir = self.mock_dir,
             verbose = verbose,
             fn_ext = fn_ext)
-        print("gen mocks", time.time() - start)
+        if not quiet:
+            print("gen mocks", time.time() - start)
 
         return mock_dict
 
@@ -671,7 +672,7 @@ class AbacusHOD:
             raise ValueError('clustering_type not implemented or not specified, use xirppi, wp, multipole')
         return clustering
 
-    def compute_xirppi(self, mock_dict, rpbins, pimax, pi_bin_size, Nthread = 8):
+    def compute_xirppi(self, mock_dict, rpbins, pimax, pi_bin_size, Nthread = 8, quiet=True):
         """
         Computes :math:`\\xi(r_p, \\pi)`.
 
@@ -709,13 +710,13 @@ class AbacusHOD:
                     continue # cross-correlations are symmetric
                 if i1 == i2: # auto corr
                     clustering[tr1+'_'+tr2] = calc_xirppi_fast(x1, y1, z1, rpbins, pimax, pi_bin_size,
-                        self.lbox, Nthread)
+                        self.lbox, Nthread, quiet=quiet)
                 else:
                     x2 = mock_dict[tr2]['x']
                     y2 = mock_dict[tr2]['y']
                     z2 = mock_dict[tr2]['z']
                     clustering[tr1+'_'+tr2] = calc_xirppi_fast(x1, y1, z1, rpbins, pimax, pi_bin_size,
-                        self.lbox, Nthread, x2 = x2, y2 = y2, z2 = z2)
+                        self.lbox, Nthread, x2 = x2, y2 = y2, z2 = z2, quiet=quiet)
                     clustering[tr2+'_'+tr1] = clustering[tr1+'_'+tr2]
         return clustering
 
@@ -834,7 +835,7 @@ class AbacusHOD:
         clustering['mu_binc'] = mu_binc
         return clustering
 
-    def apply_zcv(self, mock_dict, config, load_presaved=False):
+    def apply_zcv(self, mock_dict, config, load_presaved=False, quiet=False):
         """
         Apply control variates reduction of the variance to a power spectrum observable.
         """
@@ -877,7 +878,7 @@ class AbacusHOD:
             # run version without rsd if rsd was requested
             if config['HOD_params']['want_rsd']:
                 mock_dict = self.run_hod(self.tracers, want_rsd=False, reseed=None, write_to_disk=False,
-                                         Nthread=16, verbose=False, fn_ext=None)
+                                         Nthread=16, verbose=False, fn_ext=None, quiet=quiet)
                 for tr in mock_dict.keys():
                     # obtain the positions
                     tracer_pos = (np.vstack((mock_dict[tr]['x'], mock_dict[tr]['y'], mock_dict[tr]['z'])).T).astype(np.float32)

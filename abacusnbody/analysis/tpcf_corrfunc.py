@@ -70,7 +70,7 @@ def tpcf_multipole(s_mu_tcpf_result, mu_bins, order=0):
     return result
 
 def calc_xirppi_fast(x1, y1, z1, rpbins, pimax,
-    pi_bin_size, lbox, Nthread, num_cells = 20, x2 = None, y2 = None, z2 = None):  # all r assumed to be in h-1 mpc units.
+    pi_bin_size, lbox, Nthread, num_cells = 20, x2 = None, y2 = None, z2 = None, quiet=True):  # all r assumed to be in h-1 mpc units.
     start = time.time()
     if not isinstance(pimax, int):
         raise ValueError("pimax needs to be an integer")
@@ -108,7 +108,8 @@ def calc_xirppi_fast(x1, y1, z1, rpbins, pimax,
         results = DDrppi(autocorr, Nthread, pimax, rpbins, x1, y1, z1, X2 = x2, Y2 = y2, Z2 = z2,
             boxsize = lbox, periodic = True, max_cells_per_dim = num_cells, verbose = False)
         DD_counts = results['npairs']
-    print("corrfunc took time ", time.time() - cf_start)
+    if not quiet:
+        print("corrfunc took time ", time.time() - cf_start)
 
     DD_counts_new = np.array([np.sum(DD_counts[i:i+pi_bin_size]) for i in range(0, len(DD_counts), pi_bin_size)])
     DD_counts_new = DD_counts_new.reshape((len(rpbins) - 1, int(pimax/pi_bin_size)))
@@ -116,7 +117,8 @@ def calc_xirppi_fast(x1, y1, z1, rpbins, pimax,
     # RR_counts_new = np.zeros((len(rpbins) - 1, int(pimax/pi_bin_size)))
     RR_counts_new = np.pi*(rpbins[1:]**2 - rpbins[:-1]**2)*pi_bin_size / lbox**3 * ND1 * ND2 * 2
     xirppi = DD_counts_new / RR_counts_new[:, None] - 1
-    print("corrfunc took ", time.time() - start, "ngal ", len(x1))
+    if not quiet:
+        print("corrfunc took ", time.time() - start, "ngal ", len(x1))
     return xirppi
 
 
