@@ -26,6 +26,13 @@ from abacusnbody.data.compaso_halo_catalog import CompaSOHaloCatalog
 DEFAULTS = {}
 DEFAULTS['path2config'] = 'config/abacus_hod.yaml'
 
+defaultm1 = 11.4
+defaultm2 = 11.6
+customm1, customm2 = defaultm1, defaultm2
+force_satellites = True
+force_centrals = False
+customm1 = 11.8
+customm2 = 11.9
 
 # https://arxiv.org/pdf/2001.06018.pdf Figure 13 shows redshift evolution of LRG HOD
 # standard power law satellites
@@ -33,11 +40,11 @@ def subsample_halos(m, MT):
     x = np.log10(m)
     downfactors = np.zeros(len(x))
     if MT:
-        mask1 = x < 11.4
-        mask2 = x < 11.6
-        downfactors[mask1] = 0.2/(1.0 + 10*np.exp(-(x[mask1] - 11.2)*25))
-        downfactors[mask2&(~mask1)] = 0.4/(1.0 + 10*np.exp(-(x[mask2&(~mask1)] - 11.3)*25))
-        downfactors[~mask2] = 1.0/(1.0 + 0.1*np.exp(-(x[~mask2] - 11.7)*10))
+        mask1 = x < customm1
+        mask2 = x < customm2
+        downfactors[mask1] = 0.2/(1.0 + 10*np.exp(-(x[mask1] - (customm1-.2))*25))
+        downfactors[mask2&(~mask1)] = 0.4/(1.0 + 10*np.exp(-(x[mask2&(~mask1)] - (customm1-.1))*25))
+        downfactors[~mask2] = 1.0/(1.0 + 0.1*np.exp(-(x[~mask2] - (customm2+.1))*10))
         # save all halos that could host a satellite
         # downfactors[x>11.2] = 1
         return downfactors
@@ -91,12 +98,17 @@ def submask_particles(m_in, n_in, MT):
     x = np.log10(m_in)
 
     if MT:
-        if m_in < 1e11:
+        if (m_in < 1e11) | force_centrals:
             return np.zeros(n_in)
         else:
             # a target number of particles
             ntarget = np.minimum(n_in, int(1 + 1.5*10**(x-12.0)))
             ntarget = np.minimum(ntarget, 100)
+            # if forcing all QSOs to be satellites, keep 20 particles in all halos
+            if force_satellites:
+                # keep 20 particles if present
+                ntarget = np.minimum(n_in, 20)
+
             submask = np.zeros(n_in).astype(int)
             submask[np.random.choice(n_in, ntarget, replace = False)] = 1
             return submask
