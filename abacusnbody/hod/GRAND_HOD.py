@@ -17,19 +17,7 @@ int_array = types.int64[:]
 
 #force_qsos_satellites = True
 
-def model_redshift_errors(delta_z_dist, z, halovels):
-    maxsig = np.percentile(delta_z_dist, 99)
-    delta_z_dist = delta_z_dist[np.where(delta_z_dist > 0)]
-    sighist = np.histogram(delta_z_dist, range=(np.min(delta_z_dist), maxsig), bins=30)
-    n = len(halovels[:, 2])
-    uni = np.random.uniform(np.min(delta_z_dist), maxsig, 3 * n)
-    probs = sighist[0][np.digitize(uni, sighist[1]) - 1]
 
-    delta_z = np.random.choice(uni, n, replace=False, p=probs / np.sum(probs))
-    delta_v = 299792.458 * delta_z / (1 + z)
-    v_perturbations = np.random.normal(np.zeros(n), delta_v)
-    halovels[:, 2] = halovels[:, 2] + v_perturbations
-    return halovels
 
 @njit(fastmath=True)
 def n_sat_LRG_modified(M_h, logM_cut, M_cut, M_1, sigma, alpha, kappa):
@@ -681,8 +669,7 @@ def fast_concatenate(array1, array2, Nthread):
     return final_array
 
 
-def gen_gals(halos_array, subsample, tracers, params, Nthread, enable_ranks, rsd, verbose, force_qso_satellites,
-             error_z_dist=None):
+def gen_gals(halos_array, subsample, tracers, params, Nthread, enable_ranks, rsd, verbose, force_qso_satellites):
     """
     parse hod parameters, pass them on to central and satellite generators
     and then format the results
@@ -851,8 +838,6 @@ def gen_gals(halos_array, subsample, tracers, params, Nthread, enable_ranks, rsd
     lbox = params['Lbox']
     origin = params['origin']
 
-    if error_z_dist is not None:
-        halos_array['hvel'] = model_redshift_errors(error_z_dist, params['z'], halos_array['hvel'])
 
     # for each halo, generate central galaxies and output to file
     LRG_dict_cent, ELG_dict_cent, QSO_dict_cent, ID_dict_cent, keep_cent = \
@@ -907,7 +892,7 @@ def gen_gals(halos_array, subsample, tracers, params, Nthread, enable_ranks, rsd
 
 def gen_gal_cat(halo_data, particle_data, tracers, params, Nthread = 16,
     enable_ranks = False, rsd = True, write_to_disk = False, savedir = "./", verbose = False, fn_ext = None,
-                force_qso_satellites=False, error_z_dist=None):
+                force_qso_satellites=False):
     """
     pass on inputs to the gen_gals function and takes care of I/O
 
@@ -958,7 +943,7 @@ def gen_gal_cat(halo_data, particle_data, tracers, params, Nthread = 16,
 
     # find the halos, populate them with galaxies and write them to files
     HOD_dict = gen_gals(halo_data, particle_data, tracers, params, Nthread, enable_ranks, rsd, verbose,
-                        force_qso_satellites, error_z_dist)
+                        force_qso_satellites)
 
     # how many galaxies were generated and write them to disk
     for tracer in tracers.keys():

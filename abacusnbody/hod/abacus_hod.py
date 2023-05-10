@@ -38,11 +38,25 @@ from .GRAND_HOD import (
 )
 # TODO B.H.: staging can be shorter and prettier; perhaps asdf for h5 and ecsv?
 
+def model_redshift_errors(delta_z_dist, z, halovels):
+    maxsig = np.percentile(delta_z_dist, 99)
+    delta_z_dist = delta_z_dist[np.where(delta_z_dist > 0)]
+    sighist = np.histogram(delta_z_dist, range=(np.min(delta_z_dist), maxsig), bins=30)
+    n = len(halovels[:, 2])
+    uni = np.random.uniform(np.min(delta_z_dist), maxsig, 3 * n)
+    probs = sighist[0][np.digitize(uni, sighist[1]) - 1]
+
+    delta_z = np.random.choice(uni, n, replace=False, p=probs / np.sum(probs))
+    delta_v = 299792.458 * delta_z / (1 + z)
+    v_perturbations = np.random.normal(np.zeros(n), delta_v)
+    halovels[:, 2] = halovels[:, 2] + v_perturbations
+    return halovels
+
 class AbacusHOD:
     """
     A highly efficient multi-tracer HOD code for the AbacusSummmit simulations.
     """
-    def __init__(self, sim_params, HOD_params, clustering_params = None, chunk=-1, n_chunks=1):
+    def __init__(self, sim_params, HOD_params, clustering_params = None, chunk=-1, n_chunks=1, delta_z_dist=None):
         """
         Loads simulation. The ``sim_params`` dictionary specifies which simulation
         volume to load. The ``HOD_params`` specifies the HOD parameters and tracer
@@ -97,6 +111,7 @@ class AbacusHOD:
         self.z_mock = sim_params['z_mock']
         self.output_dir = sim_params.get('output_dir', './')
         self.halo_lc = sim_params.get('halo_lc', False)
+        self.delta_z_dist = delta_z_dist
 
         # tracers
         tracer_flags = HOD_params['tracer_flags']
@@ -402,11 +417,13 @@ class AbacusHOD:
             particle_data['pranksp'] =  np.ones(Nparts_tot)
             particle_data['pranksr'] =  np.ones(Nparts_tot)
             particle_data['pranksc'] =  np.ones(Nparts_tot)
+        if self.delta_z_dist is not None:
+            halo_data['hvel'] = model_redshift_errors(self.delta_z_dist, params['z'], halo_data['hvel'])
 
         return halo_data, particle_data, params, mock_dir
 
     def run_hod(self, tracers = None, want_rsd = True, reseed = None, write_to_disk = False,
-        Nthread = 16, verbose = False, fn_ext = None, quiet=True, force_qso_satellites=False, error_z_dist=None):
+        Nthread = 16, verbose = False, fn_ext = None, quiet=True, force_qso_satellites=False):
         """
         Runs a custom HOD.
 
@@ -472,8 +489,7 @@ class AbacusHOD:
             savedir = self.mock_dir,
             verbose = verbose,
             fn_ext = fn_ext,
-            force_qso_satellites=force_qso_satellites,
-            error_z_dist=error_z_dist)
+            force_qso_satellites=force_qso_satellites)
         if not quiet:
             print("gen mocks", time.time() - start)
 
