@@ -15,9 +15,21 @@ from numba.typed import Dict
 float_array = types.float64[:]
 int_array = types.int64[:]
 
-force_qsos_satellites = True
+#force_qsos_satellites = True
 
+def model_redshift_errors(delta_z_dist, z, halovels):
+    maxsig = np.percentile(delta_z_dist, 99)
+    delta_z_dist = delta_z_dist[np.where(delta_z_dist > 0)]
+    sighist = np.histogram(delta_z_dist, range=(np.min(delta_z_dist), maxsig), bins=30)
+    n = len(halovels[:, 2])
+    uni = np.random.uniform(np.min(delta_z_dist), maxsig, 3 * n)
+    probs = sighist[0][np.digitize(uni, sighist[1]) - 1]
 
+    delta_z = np.random.choice(uni, n, replace=False, p=probs / np.sum(probs))
+    delta_v = 299792.458 * delta_z / (1 + z)
+    v_perturbations = np.random.normal(np.zeros(n), delta_v)
+    halovels[:, 2] = halovels[:, 2] + v_perturbations
+    return halovels
 
 @njit(fastmath=True)
 def n_sat_LRG_modified(M_h, logM_cut, M_cut, M_1, sigma, alpha, kappa):
@@ -36,21 +48,28 @@ def n_cen_LRG(M_h, logM_cut, sigma):
     """
     return 0.5*math.erfc((logM_cut - np.log10(M_h))/(1.41421356*sigma))
 
-# if forcing QSOs to be satellites, treat satellite HOD like a central HOD, a step function with minimum mass
-if force_qsos_satellites:
-    @njit(fastmath=True)
-    def N_sat_generic(M_h, M_cut, kappa, M_1, alpha, A_s=1.):
-        logM_cut = np.log10(M_cut)
-        return 0.5 * (1 + math.erf((np.log10(M_h) - logM_cut) / 1.41421356 / 0.0001))
-else:
-    @njit(fastmath=True)
-    def N_sat_generic(M_h, M_cut, kappa, M_1, alpha, A_s=1.):
-        """
-        Standard Zheng et al. (2005) satellite HOD parametrization for all tracers with an optional amplitude parameter, A_s.
-        """
-        if M_h - kappa*M_cut < 0:
-            return 0
-        return A_s*((M_h-kappa*M_cut)/M_1)**alpha
+@njit(fastmath=True)
+def N_sat_QSO(M_h, M_cut, kappa, M_1, alpha, A_s=1., force_qso_satellites=False):
+    """
+    Standard Zheng et al. (2005) satellite HOD parametrization for all tracers with an optional amplitude parameter, A_s.
+    """
+    # if making QSOs behave as satellites, use simple step function HOD
+    if force_qso_satellites:
+        return 0.5 * (1 + math.erf((np.log10(M_h) - np.log10(M_cut)) / 1.41421356 / 0.0001))
+    if M_h - kappa*M_cut < 0:
+        return 0
+    return A_s*((M_h-kappa*M_cut)/M_1)**alpha
+
+
+
+@njit(fastmath=True)
+def N_sat_generic(M_h, M_cut, kappa, M_1, alpha, A_s=1.):
+    """
+    Standard Zheng et al. (2005) satellite HOD parametrization for all tracers with an optional amplitude parameter, A_s.
+    """
+    if M_h - kappa*M_cut < 0:
+        return 0
+    return A_s*((M_h-kappa*M_cut)/M_1)**alpha
 
 
 
@@ -83,18 +102,15 @@ def N_cen_ELG_v2(M_h, p_max, logM_cut, sigma, gamma):
     else:
         return p_max*(M_h/10**logM_cut)**gamma/(2.5066283*sigma)
 
-# if forcing QSOs to always be satellites, N_cen_QSO always returns 0
-if force_qsos_satellites:
-    mod = 0.
-else:
-    mod = 1.
 
 @njit(fastmath=True)
-def N_cen_QSO(M_h, logM_cut, sigma):
+def N_cen_QSO(M_h, logM_cut, sigma, force_qso_satellites=False):
     """
     HOD function (Zheng et al. (2005) with p_max) for QSO centrals taken from arXiv:2007.09012.
     """
-    return mod*0.5*(1 + math.erf((np.log10(M_h)-logM_cut)/1.41421356/sigma))
+    if force_qso_satellites:
+        return 0
+    return 0.5*(1 + math.erf((np.log10(M_h)-logM_cut)/1.41421356/sigma))
 
 
 @njit(fastmath=True)
@@ -145,7 +161,7 @@ def wrap(x, L):
 def gen_cent(pos, vel, mass, ids, multis, randoms, vdev, deltac, fenv,
     LRG_design_array, LRG_decorations_array, ELG_design_array,
     ELG_decorations_array, QSO_design_array, QSO_decorations_array,
-    rsd, inv_velz2kms, lbox, want_LRG, want_ELG, want_QSO, Nthread, origin):
+    rsd, inv_velz2kms, lbox, want_LRG, want_ELG, want_QSO, Nthread, origin, force_qso_satellites):
     """
     Generate central galaxies in place in memory with a two pass numba parallel implementation.
     """
@@ -191,7 +207,8 @@ def gen_cent(pos, vel, mass, ids, multis, randoms, vdev, deltac, fenv,
             QSO_marker = ELG_marker
             if want_QSO:
                 # logM_cut_Q_temp = logM_cut_Q + Ac_Q * deltac[i] + Bc_Q * fenv[i]
-                QSO_marker += N_cen_QSO(mass[i], logM_cut_Q, sigma_Q) * ic_Q * multis[i]
+                QSO_marker += N_cen_QSO(mass[i], logM_cut_Q, sigma_Q,
+                                        force_qso_satellites=force_qso_satellites) * ic_Q * multis[i]
 
             if randoms[i] <= LRG_marker:
                 Nout[tid, 0, 0] += 1 # counting
@@ -367,7 +384,7 @@ def gen_sats(ppos, pvel, hvel, hmass, hid, weights, randoms, hdeltac, hfenv,
     enable_ranks, ranks, ranksv, ranksp, ranksr, ranksc,
     LRG_design_array, LRG_decorations_array, ELG_design_array, ELG_decorations_array,
     QSO_design_array, QSO_decorations_array,
-    rsd, inv_velz2kms, lbox, Mpart, want_LRG, want_ELG, want_QSO, Nthread, origin, keep_cent):
+    rsd, inv_velz2kms, lbox, Mpart, want_LRG, want_ELG, want_QSO, Nthread, origin, keep_cent, force_qso_satellites):
 
     """
     Generate satellite galaxies in place in memory with a two pass numba parallel implementation.
@@ -453,8 +470,11 @@ def gen_sats(ppos, pvel, hvel, hmass, hid, weights, randoms, hdeltac, hfenv,
             if want_QSO:
                 M1_Q_temp = 10**(logM1_Q + As_Q * hdeltac[i] + Bs_Q * hfenv[i])
                 logM_cut_Q_temp = logM_cut_Q + Ac_Q * hdeltac[i] + Bc_Q * hfenv[i]
-                base_p_Q = N_sat_generic(
-                    hmass[i], 10**logM_cut_Q_temp, kappa_Q, M1_Q_temp, alpha_Q) * weights[i] * ic_Q
+                #base_p_Q = N_sat_generic(
+                #    hmass[i], 10**logM_cut_Q_temp, kappa_Q, M1_Q_temp, alpha_Q) * weights[i] * ic_Q
+                base_p_Q = N_sat_QSO(
+                    hmass[i], 10**logM_cut_Q_temp, kappa_Q,
+                    M1_Q_temp, alpha_Q, force_qso_satellites=force_qso_satellites) * weights[i] * ic_Q
                 if enable_ranks:
                     decorator_Q = 1 + s_Q * ranks[i] + s_v_Q * ranksv[i] + s_p_Q * ranksp[i] + s_r_Q * ranksr[i]
                     exp_sat = base_p_Q * decorator_Q
@@ -661,7 +681,8 @@ def fast_concatenate(array1, array2, Nthread):
     return final_array
 
 
-def gen_gals(halos_array, subsample, tracers, params, Nthread, enable_ranks, rsd, verbose):
+def gen_gals(halos_array, subsample, tracers, params, Nthread, enable_ranks, rsd, verbose, force_qso_satellites,
+             error_z_dist=None):
     """
     parse hod parameters, pass them on to central and satellite generators
     and then format the results
@@ -829,12 +850,17 @@ def gen_gals(halos_array, subsample, tracers, params, Nthread, enable_ranks, rsd
     inv_velz2kms = 1/velz2kms
     lbox = params['Lbox']
     origin = params['origin']
+
+    if error_z_dist is not None:
+        halos_array['hvel'] = model_redshift_errors(error_z_dist, params['z'], halos_array['hvel'])
+
     # for each halo, generate central galaxies and output to file
     LRG_dict_cent, ELG_dict_cent, QSO_dict_cent, ID_dict_cent, keep_cent = \
     gen_cent(halos_array['hpos'], halos_array['hvel'], halos_array['hmass'], halos_array['hid'], halos_array['hmultis'],
              halos_array['hrandoms'], halos_array['hveldev'], halos_array['hdeltac'], halos_array['hfenv'],
              LRG_design_array, LRG_decorations_array, ELG_design_array, ELG_decorations_array, QSO_design_array,
-             QSO_decorations_array, rsd, inv_velz2kms, lbox, want_LRG, want_ELG, want_QSO, Nthread, origin)
+             QSO_decorations_array, rsd, inv_velz2kms, lbox, want_LRG, want_ELG, want_QSO, Nthread, origin,
+             force_qso_satellites)
     if verbose:
         print("generating centrals took ", time.time() - start)
 
@@ -854,7 +880,7 @@ def gen_gals(halos_array, subsample, tracers, params, Nthread, enable_ranks, rsd
              enable_ranks, subsample['pranks'], subsample['pranksv'], subsample['pranksp'], subsample['pranksr'], subsample['pranksc'],
              LRG_design_array, LRG_decorations_array, ELG_design_array, ELG_decorations_array,
              QSO_design_array, QSO_decorations_array, rsd, inv_velz2kms, lbox, params['Mpart'],
-             want_LRG, want_ELG, want_QSO, Nthread, origin, keep_cent[subsample['pinds']])
+             want_LRG, want_ELG, want_QSO, Nthread, origin, keep_cent[subsample['pinds']], force_qso_satellites)
     if verbose:
         print("generating satellites took ", time.time() - start)
 
@@ -880,7 +906,8 @@ def gen_gals(halos_array, subsample, tracers, params, Nthread, enable_ranks, rsd
 
 
 def gen_gal_cat(halo_data, particle_data, tracers, params, Nthread = 16,
-    enable_ranks = False, rsd = True, write_to_disk = False, savedir = "./", verbose = False, fn_ext = None):
+    enable_ranks = False, rsd = True, write_to_disk = False, savedir = "./", verbose = False, fn_ext = None,
+                force_qso_satellites=False, error_z_dist=None):
     """
     pass on inputs to the gen_gals function and takes care of I/O
 
@@ -930,7 +957,8 @@ def gen_gal_cat(halo_data, particle_data, tracers, params, Nthread = 16,
         raise ValueError("Error: rsd has to be a boolean")
 
     # find the halos, populate them with galaxies and write them to files
-    HOD_dict = gen_gals(halo_data, particle_data, tracers, params, Nthread, enable_ranks, rsd, verbose)
+    HOD_dict = gen_gals(halo_data, particle_data, tracers, params, Nthread, enable_ranks, rsd, verbose,
+                        force_qso_satellites, error_z_dist)
 
     # how many galaxies were generated and write them to disk
     for tracer in tracers.keys():
