@@ -52,6 +52,8 @@ def model_redshift_errors(delta_z_dist, z, halovels):
     halovels[:, 2] = halovels[:, 2] + v_perturbations
     return halovels
 
+
+
 class AbacusHOD:
     """
     A highly efficient multi-tracer HOD code for the AbacusSummmit simulations.
@@ -171,9 +173,11 @@ class AbacusHOD:
         # load header to read parameters
         if self.halo_lc:
             halo_info_fns = [str(sim_dir / simname / ('z%4.3f'%self.z_mock) / 'lc_halo_info.asdf')]
+            totslabs = 1
         else:
             halo_info_fns = \
                             list((sim_dir / simname / 'halos' / ('z%4.3f'%self.z_mock) / 'halo_info').glob('*.asdf'))
+            totslabs = float(len(halo_info_fns))
         f = asdf.open(halo_info_fns[0], lazy_load=True, copy_arrays=False)
         header = f['header']
 
@@ -203,6 +207,7 @@ class AbacusHOD:
             end = len(halo_info_fns)
         params['numslabs'] = end-start
         self.lbox = header['BoxSize']
+        self.frac_slabs = params['numslabs'] / totslabs
 
         # count ther number of halos and particles
         Nhalos = np.empty(params['numslabs'])
@@ -733,13 +738,13 @@ class AbacusHOD:
                     continue # cross-correlations are symmetric
                 if i1 == i2: # auto corr
                     clustering[tr1+'_'+tr2] = calc_xirppi_fast(x1, y1, z1, rpbins, pimax, pi_bin_size,
-                        self.lbox, Nthread, quiet=quiet)
+                        self.lbox, self.frac_slabs, Nthread, quiet=quiet)
                 else:
                     x2 = mock_dict[tr2]['x']
                     y2 = mock_dict[tr2]['y']
                     z2 = mock_dict[tr2]['z']
                     clustering[tr1+'_'+tr2] = calc_xirppi_fast(x1, y1, z1, rpbins, pimax, pi_bin_size,
-                        self.lbox, Nthread, x2 = x2, y2 = y2, z2 = z2, quiet=quiet)
+                        self.lbox, self.frac_slabs, Nthread, x2 = x2, y2 = y2, z2 = z2, quiet=quiet)
                     clustering[tr2+'_'+tr1] = clustering[tr1+'_'+tr2]
         return clustering
 
@@ -754,16 +759,16 @@ class AbacusHOD:
                     continue # cross-correlations are symmetric
                 if i1 == i2: # auto corr
                     new_multi = calc_multipole_fast(x1, y1, z1, rpbins,
-                        self.lbox, Nthread)
-                    new_wp = calc_wp_fast(x1, y1, z1, rpbins, pimax, self.lbox, Nthread)
+                        self.lbox, self.frac_slabs, Nthread)
+                    new_wp = calc_wp_fast(x1, y1, z1, rpbins, pimax, self.lbox, self.frac_slabs, Nthread)
                     clustering[tr1+'_'+tr2] = np.concatenate((new_wp, new_multi))
                 else:
                     x2 = mock_dict[tr2]['x']
                     y2 = mock_dict[tr2]['y']
                     z2 = mock_dict[tr2]['z']
                     new_multi = calc_multipole_fast(x1, y1, z1, rpbins,
-                        self.lbox, Nthread, x2 = x2, y2 = y2, z2 = z2)
-                    new_wp = calc_wp_fast(x1, y1, z1, rpbins, pimax, self.lbox, Nthread,
+                        self.lbox, self.frac_slabs, Nthread, x2 = x2, y2 = y2, z2 = z2)
+                    new_wp = calc_wp_fast(x1, y1, z1, rpbins, pimax, self.lbox, self.frac_slabs, Nthread,
                         x2 = x2, y2 = y2, z2 = z2)
                     clustering[tr1+'_'+tr2] = np.concatenate((new_wp, new_multi))
                     clustering[tr2+'_'+tr1] = clustering[tr1+'_'+tr2]
@@ -918,7 +923,7 @@ class AbacusHOD:
         zcv_dict = run_zcv(pk_rsd_tr_dict, pk_rsd_ij_dict, pk_tr_dict, pk_ij_dict, config)
         return zcv_dict
 
-    def compute_wp(self, mock_dict, rpbins, pimax, pi_bin_size, Nthread = 8):
+    def compute_wp(self, mock_dict, rpbins, pimax, pi_bin_size, Nthread = 8, quiet=True):
         """
         Computes :math:`w_p`.
 
@@ -956,14 +961,14 @@ class AbacusHOD:
                     continue # cross-correlations are symmetric
                 if i1 == i2:
                     print(tr1+'_'+tr2)
-                    clustering[tr1+'_'+tr2] = calc_wp_fast(x1, y1, z1, rpbins, pimax, self.lbox, Nthread)
+                    clustering[tr1+'_'+tr2] = calc_wp_fast(x1, y1, z1, rpbins, pimax, self.lbox, self.frac_slabs, Nthread, quiet=quiet)
                 else:
                     print(tr1+'_'+tr2)
                     x2 = mock_dict[tr2]['x']
                     y2 = mock_dict[tr2]['y']
                     z2 = mock_dict[tr2]['z']
-                    clustering[tr1+'_'+tr2] = calc_wp_fast(x1, y1, z1, rpbins, pimax, self.lbox, Nthread,
-                        x2 = x2, y2 = y2, z2 = z2)
+                    clustering[tr1+'_'+tr2] = calc_wp_fast(x1, y1, z1, rpbins, pimax, self.lbox, self.frac_slabs, Nthread,
+                        x2 = x2, y2 = y2, z2 = z2, quiet=quiet)
                     clustering[tr2+'_'+tr1] = clustering[tr1+'_'+tr2]
         return clustering
 
