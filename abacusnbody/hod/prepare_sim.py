@@ -29,8 +29,6 @@ DEFAULTS['path2config'] = 'config/abacus_hod.yaml'
 defaultm1 = 11.4
 defaultm2 = 11.6
 customm1, customm2 = defaultm1, defaultm2
-force_satellites = True
-force_centrals = False
 customm1 = 11.8
 customm2 = 11.9
 
@@ -94,7 +92,7 @@ def subsample_halos(m, MT):
 #             return submask
 
 # conformity fix
-def submask_particles(m_in, n_in, MT):
+def submask_particles(m_in, n_in, MT, force_centrals=False, force_satellites=False):
     x = np.log10(m_in)
 
     if MT:
@@ -288,7 +286,8 @@ def do_Menv_from_tree(allpos, allmasses, r_inner, r_outer, halo_lc, Lbox, nthrea
 
 
 def prepare_slab(i, savedir, simdir, simname, z_mock, tracer_flags, MT, want_ranks, want_AB, cleaning, newseed,
-                 halo_lc=False, nthread = 1, overwrite = 1, mcut = 1e11, rad_outer = 5.):
+                 halo_lc=False, nthread = 1, overwrite = 1, mcut = 1e11, rad_outer = 5., force_centrals=False,
+                 force_satellites=False):
     outfilename_halos = savedir+'/halos_xcom_'+str(i)+'_seed'+str(newseed)+'_abacushod_oldfenv'
     outfilename_particles = savedir+'/particles_xcom_'+str(i)+'_seed'+str(newseed)+'_abacushod_oldfenv'
     print("processing slab ", i)
@@ -504,7 +503,8 @@ def prepare_slab(i, savedir, simdir, simname, z_mock, tracer_flags, MT, want_ran
         if mask_halos[j] and halos['npoutA'][j] > 0:
             # subsample_factor = subsample_particles(halos['N'][j] * Mpart, halos['npoutA'][j], MT)
             # submask = np.random.binomial(n = 1, p = subsample_factor, size = halos_pnum[j])
-            submask = submask_particles(halos['N'][j] * Mpart, halos['npoutA'][j], MT)
+            submask = submask_particles(halos['N'][j] * Mpart, halos['npoutA'][j], MT,
+                                        force_centrals=force_centrals, force_satellites=force_satellites)
 
             # updating the particles' masks, downsample factors, halo mass
             mask_parts[halos_pstart[j]: halos_pstart[j] + halos_pnum[j]] = submask
@@ -653,7 +653,8 @@ def prepare_slab(i, savedir, simdir, simname, z_mock, tracer_flags, MT, want_ran
 
     print("pre process particle number ", len_old, " post process particle number ", len(parts))
 
-def main(path2config, params = None, alt_simname = None, alt_z = None, newseed = 600, halo_lc = False, overwrite = 1):
+def main(path2config, params = None, alt_simname = None, alt_z = None, newseed = 600, halo_lc = False, overwrite = 1,
+         force_centrals=False, force_satellites=False):
     print("compiling compaso halo catalogs into subsampled catalogs")
 
     config = yaml.safe_load(open(path2config))
@@ -692,13 +693,15 @@ def main(path2config, params = None, alt_simname = None, alt_z = None, newseed =
     nthread = int(np.floor(multiprocessing.cpu_count()/config['prepare_sim']['Nparallel_load']))
 
     os.makedirs(savedir, exist_ok = True)
-
+    mcut = 1e11
+    rad_outer=5.
     p = multiprocessing.Pool(config['prepare_sim']['Nparallel_load'])
     p.starmap(prepare_slab, zip(range(numslabs), repeat(savedir),
                                 repeat(simdir), repeat(simname), repeat(z_mock),
                                 repeat(tracer_flags), repeat(MT), repeat(want_ranks),
                                 repeat(want_AB), repeat(cleaning), repeat(newseed), repeat(halo_lc),
-                                repeat(nthread), repeat(overwrite)))
+                                repeat(nthread), repeat(overwrite), repeat(mcut), repeat(rad_outer),
+                                repeat(force_centrals), repeat(force_satellites)))
     p.close()
     p.join()
 
