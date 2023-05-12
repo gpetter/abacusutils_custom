@@ -194,8 +194,8 @@ def gen_cent(pos, vel, mass, ids, multis, randoms, vdev, deltac, fenv,
                 ELG_marker += N_cen_ELG_v1(mass[i], pmax_E, Q_E, logM_cut_E_temp, sigma_E, gamma_E) * ic_E * multis[i]
             QSO_marker = ELG_marker
             if want_QSO:
-                # logM_cut_Q_temp = logM_cut_Q + Ac_Q * deltac[i] + Bc_Q * fenv[i]
-                QSO_marker += N_cen_QSO(mass[i], logM_cut_Q, sigma_Q,
+                logM_cut_Q_temp = logM_cut_Q + Ac_Q * deltac[i] + Bc_Q * fenv[i]
+                QSO_marker += N_cen_QSO(mass[i], logM_cut_Q_temp, sigma_Q,
                                         force_qso_satellites=force_qso_satellites) * ic_Q * multis[i]
 
             if randoms[i] <= LRG_marker:
