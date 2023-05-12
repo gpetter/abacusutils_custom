@@ -75,6 +75,25 @@ def tpcf_multipole(s_mu_tcpf_result, mu_bins, order=0):
 
     return result
 
+# compute clustering "wedges"
+def convert_cf_to_xi_s(xi_s_mu, nmubins, wedges=None):
+    #xi_s_mu = np.reshape(xi_s_mu, (nsbins, nmubins))
+    mubinedges = np.linspace(0., 1., nmubins+1)
+
+    monopoles, quadrupoles = [], []
+
+    if wedges is None:
+        monopoles = tpcf_multipole(xi_s_mu, mu_bins=mubinedges, order=0)
+        quadrupoles = tpcf_multipole(xi_s_mu, mu_bins=mubinedges, order=2)
+    else:
+        wedgelength = int(nmubins / wedges)
+        for j in range(wedges):
+            wedgebinedges = mubinedges[(j*wedgelength):((j+1)*wedgelength+1)]
+            xi_s_mu_in_wedge = xi_s_mu[:, (j*wedgelength):((j+1)*wedgelength)]
+            monopoles.append(tpcf_multipole(xi_s_mu_in_wedge, mu_bins=wedgebinedges, order=0))
+            quadrupoles.append(tpcf_multipole(xi_s_mu_in_wedge, mu_bins=wedgebinedges, order=2))
+    return monopoles, quadrupoles
+
 def calc_xirppi_fast(x1, y1, z1, rpbins, pimax,
     pi_bin_size, lbox, frac_slabs, Nthread, num_cells = 20, x2 = None, y2 = None, z2 = None, quiet=True):  # all r assumed to be in h-1 mpc units.
     start = time.time()
@@ -139,7 +158,7 @@ def calc_xirppi_fast(x1, y1, z1, rpbins, pimax,
 
 
 def calc_multipole_fast(x1, y1, z1, rpbins,
-    lbox, frac_slabs, Nthread, num_cells = 20, x2 = None, y2 = None, z2 = None, orders = [0, 2]):  # all r assumed to be in h-1 mpc units.
+    lbox, frac_slabs, Nthread, num_cells = 20, x2 = None, y2 = None, z2 = None, orders = [0, 2], nbins_mu=40):  # all r assumed to be in h-1 mpc units.
 
     ND1 = float(len(x1))
     if x2 is not None:
@@ -172,7 +191,6 @@ def calc_multipole_fast(x1, y1, z1, rpbins,
         # boxsize == -1 means no periodicity in x direction since not all slabs are present
         boxsize = (-1, lbox, lbox)
 
-    nbins_mu = 40
     if autocorr == 1:
         results = DDsmu(autocorr, Nthread, rpbins, 1, nbins_mu, x1, y1, z1, periodic = True, boxsize = boxsize, max_cells_per_dim = num_cells)
         DD_counts = results['npairs']
@@ -186,17 +204,19 @@ def calc_multipole_fast(x1, y1, z1, rpbins,
     DD_counts = DD_counts.reshape((len(rpbins) - 1, nbins_mu))
 
     mu_bins = np.linspace(0, 1, nbins_mu+1)
-    RR_counts = 2*np.pi/3*(rpbins[1:, None]**3 - rpbins[:-1, None]**3)*(mu_bins[None, 1:] - mu_bins[None, :-1]) / (frac_slabs * lbox ** 3) * ND1 * ND2 * 2
+    RR_counts = 2*np.pi/3*(rpbins[1:, None]**3 - rpbins[:-1, None]**3)*(mu_bins[None, 1:] - mu_bins[None, :-1]) / \
+                (frac_slabs * lbox ** 3) * ND1 * ND2 * 2
 
     xi_s_mu = DD_counts / RR_counts - 1
 
-    xi_array = []
-    for neworder in orders:
+    #xi_array = []
+    #for neworder in orders:
         # print(neworder, rpbins, tpcf_multipole(xi_s_mu, mu_bins, order = neworder))
-        xi_array += [tpcf_multipole(xi_s_mu, mu_bins, order=neworder)]
-    xi_array = np.concatenate(xi_array)
+    #    xi_array += [tpcf_multipole(xi_s_mu, mu_bins, order=neworder)]
+    #xi_array = np.concatenate(xi_array)
 
-    return xi_array
+    #return xi_array
+    return xi_s_mu
 
 
 def calc_wp_fast(x1, y1, z1, rpbins, pimax,
