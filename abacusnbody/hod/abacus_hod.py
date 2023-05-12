@@ -25,6 +25,7 @@ from ..analysis.tpcf_corrfunc import (
     calc_multipole_fast,
     calc_wp_fast,
     calc_xirppi_fast,
+    convert_cf_to_xi_s
 )
 from .GRAND_HOD import (
     gen_gal_cat,
@@ -748,7 +749,7 @@ class AbacusHOD:
                     clustering[tr2+'_'+tr1] = clustering[tr1+'_'+tr2]
         return clustering
 
-    def compute_multipole(self, mock_dict, rpbins, pimax, Nthread = 8):
+    def compute_multipole(self, mock_dict, rpbins, Nthread = 8, nbins_mu=40, wedges=None):
         clustering = {}
         for i1, tr1 in enumerate(mock_dict.keys()):
             x1 = mock_dict[tr1]['x']
@@ -759,19 +760,21 @@ class AbacusHOD:
                     continue # cross-correlations are symmetric
                 if i1 == i2: # auto corr
                     new_multi = calc_multipole_fast(x1, y1, z1, rpbins,
-                        self.lbox, self.frac_slabs, Nthread)
-                    new_wp = calc_wp_fast(x1, y1, z1, rpbins, pimax, self.lbox, self.frac_slabs, Nthread)
-                    clustering[tr1+'_'+tr2] = np.concatenate((new_wp, new_multi))
+                        self.lbox, self.frac_slabs, Nthread, nbins_mu=nbins_mu)
+                    #new_wp = calc_wp_fast(x1, y1, z1, rpbins, pimax, self.lbox, self.frac_slabs, Nthread)
+                    #clustering[tr1+'_'+tr2] = np.concatenate((new_wp, new_multi))
+                    clustering[tr1 + '_' + tr2] = convert_cf_to_xi_s(new_multi, nbins_mu, wedges=wedges)
                 else:
                     x2 = mock_dict[tr2]['x']
                     y2 = mock_dict[tr2]['y']
                     z2 = mock_dict[tr2]['z']
                     new_multi = calc_multipole_fast(x1, y1, z1, rpbins,
-                        self.lbox, self.frac_slabs, Nthread, x2 = x2, y2 = y2, z2 = z2)
-                    new_wp = calc_wp_fast(x1, y1, z1, rpbins, pimax, self.lbox, self.frac_slabs, Nthread,
-                        x2 = x2, y2 = y2, z2 = z2)
-                    clustering[tr1+'_'+tr2] = np.concatenate((new_wp, new_multi))
-                    clustering[tr2+'_'+tr1] = clustering[tr1+'_'+tr2]
+                        self.lbox, self.frac_slabs, Nthread, x2 = x2, y2 = y2, z2 = z2, nbins_mu=nbins_mu)
+                    #new_wp = calc_wp_fast(x1, y1, z1, rpbins, pimax, self.lbox, self.frac_slabs, Nthread,
+                    #    x2 = x2, y2 = y2, z2 = z2)
+                    #clustering[tr1+'_'+tr2] = np.concatenate((new_wp, new_multi))
+                    #clustering[tr2+'_'+tr1] = clustering[tr1+'_'+tr2]
+                    clustering[tr1 + '_' + tr2] = convert_cf_to_xi_s(new_multi, nbins_mu, wedges=wedges)
         return clustering
 
     def compute_power(self, mock_dict, nbins_k, nbins_mu, k_hMpc_max, logk, poles = [], paste = 'TSC', num_cells = 550, compensated = False, interlaced = False):
